@@ -106,15 +106,22 @@ module Bundler
       return specs unless strict
 
       locked_version = package.locked_version
-      return specs if locked_version.nil? || major?
+      return specs if locked_version.nil?
 
       specs.select do |spec|
         gsv = spec.version
 
-        must_match = minor? ? [0] : [0, 1]
+        next false if gsv < locked_version
 
-        all_match = must_match.all? {|idx| gsv.segments[idx] == locked_version.segments[idx] }
-        all_match && gsv >= locked_version
+        if major?
+          # "Prefer updating to next major version" -- one major above the
+          # locked one, not every major that happens to exist.
+          gsv.segments[0] <= locked_version.segments[0] + 1
+        else
+          must_match = minor? ? [0] : [0, 1]
+
+          must_match.all? {|idx| gsv.segments[idx] == locked_version.segments[idx] }
+        end
       end
     end
 

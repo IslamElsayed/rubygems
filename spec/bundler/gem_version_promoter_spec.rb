@@ -133,6 +133,75 @@ RSpec.describe Bundler::GemVersionPromoter do
     end
   end
 
+  describe "#filter_versions" do
+    def build_candidates(versions)
+      versions.map do |v|
+        Bundler::Resolver::Candidate.new(v)
+      end
+    end
+
+    def build_package(name, version)
+      Bundler::Resolver::Package.new(name, [], locked_specs: Bundler::SpecSet.new(build_spec(name, version)), unlock: [])
+    end
+
+    def filtered_versions(candidates:, current:)
+      gvp.filter_versions(
+        build_package("foo", current),
+        build_candidates(candidates)
+      ).map {|candidate| candidate.version.to_s }
+    end
+
+    let(:candidates) { %w[0.9.0 1.0.0 1.2.0 1.3.1 2.0.0 2.5.1 3.0.0 4.1.0] }
+
+    context "when not strict" do
+      it "returns every candidate, whatever the level" do
+        gvp.level = :major
+
+        expect(filtered_versions(candidates: candidates, current: "1.2.0")).to eq candidates
+      end
+    end
+
+    context "when strict" do
+      before { gvp.strict = true }
+
+      context "when level is major" do
+        before { gvp.level = :major }
+
+        it "allows the next major but not the majors beyond it" do
+          expect(filtered_versions(candidates: candidates, current: "1.2.0")).to eq %w[1.2.0 1.3.1 2.0.0 2.5.1]
+        end
+
+        it "excludes downgrades" do
+          expect(filtered_versions(candidates: candidates, current: "1.2.0")).not_to include("0.9.0", "1.0.0")
+        end
+
+        it "allows every remaining version when already on the highest major" do
+          expect(filtered_versions(candidates: %w[4.1.0 4.2.0 5.0.0], current: "4.1.0")).to eq %w[4.1.0 4.2.0 5.0.0]
+        end
+
+        it "returns nothing when only later majors are available" do
+          expect(filtered_versions(candidates: %w[3.0.0 4.1.0], current: "1.2.0")).to eq []
+        end
+      end
+
+      context "when level is minor" do
+        before { gvp.level = :minor }
+
+        it "stays within the locked major" do
+          expect(filtered_versions(candidates: candidates, current: "1.2.0")).to eq %w[1.2.0 1.3.1]
+        end
+      end
+
+      context "when level is patch" do
+        before { gvp.level = :patch }
+
+        it "stays within the locked minor" do
+          expect(filtered_versions(candidates: candidates, current: "1.2.0")).to eq %w[1.2.0]
+        end
+      end
+    end
+  end
+
   describe "#level=" do
     subject { described_class.new }
 
